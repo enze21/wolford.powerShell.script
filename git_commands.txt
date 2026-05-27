@@ -1,0 +1,22 @@
+# Comandi GIT per aggiungere e pushare un file PowerShell
+
+# 1. Vai nella directory della repo
+cd C:\repo
+
+# 2. Controlla lo stato
+git status
+
+# 3. Aggiungi il file
+ git add script.ps1
+
+# 4. Commit
+ git commit -m "Aggiunto script PowerShell"
+
+# 5. Aggiungi il remote (SOLO la prima volta)
+ git remote add origin https://github.com/USERNAME/NOME-REPO.git
+
+# 6. Push su GitHub
+ git push -u origin main
+
+# 7. Push successivi
+ git push

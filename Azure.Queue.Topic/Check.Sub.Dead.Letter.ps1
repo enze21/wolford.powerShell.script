@@ -2,7 +2,7 @@
 # ============================================
 # LOAD CONFIG
 # ============================================
-$configPath = ".\config.json"
+$configPath = "D:\PowerShell\Azure.Queue.Topic\config.json"
 
 if (!(Test-Path $configPath)) {
     Write-Error "Config file not found: $configPath"

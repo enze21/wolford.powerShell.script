@@ -11,13 +11,13 @@ if (!(Test-Path $configPath)) {
 
 $config = Get-Content $configPath | ConvertFrom-Json
 
-$TenantId      = $config.TenantId
-$SubscriptionId = $config.SubscriptionId
-$ResourceGroup = $config.ResourceGroup
-$Namespace     = $config.Namespace
-$AppId         = $config.AppId
-$Secret        = $config.Secret | ConvertTo-SecureString -AsPlainText -Force
-$BasePath      = $config.BasePath
+$TenantId      = $config.PRD.TenantId
+$SubscriptionId = $config.PRD.SubscriptionId
+$ResourceGroup = $config.PRD.ResourceGroup
+$Namespace     = $config.PRD.Namespace
+$AppId         = $config.PRD.AppId
+$Secret        = $config.PRD.Secret | ConvertTo-SecureString -AsPlainText -Force
+$BasePath      = $config.PRD.BasePath
 
 $DateStamp = Get-Date -Format "dd.MM.yyyy"
 $OutputCsv = "$BasePath\$DateStamp.ServiceBus_DLQ_Report.csv"

@@ -14,28 +14,24 @@ if (!(Test-Path $configPath)) {
 
 $config = Get-Content $configPath | ConvertFrom-Json
 
-#PRD
-$config = $config.PRD
 
-#TEST
-#$config = $config.TEST
-
-#$TenantId      = $config.TenantId
-#$SubscriptionId = $config.SubscriptionId
-#$ResourceGroup = $config.ResourceGroup
-$Namespace     = $config.Namespace
-#$AppId         = $config.AppId
-#$Secret        = $config.Secret | ConvertTo-SecureString -AsPlainText -Force
-$BasePath      = $config.BasePath
+#$TenantId      = $config.TEST.TenantId
+#$SubscriptionId = $config.TEST.SubscriptionId
+#$ResourceGroup = $config.TEST.ResourceGroup
+$Namespace     = $config.TEST.Namespace
+#$AppId         = $config.TEST.AppId
+#$Secret        = $config.TEST.Secret | ConvertTo-SecureString -AsPlainText -Force
+$BasePath      = $config.TEST.BasePath
 
 $DateStamp = Get-Date -Format "dd.MM.yyyy"
 
 #$EnableCsvExport = $true
 
-$QueueName = "myqueue"
+#Nome coda
+$QueueName = "bistockreplenishmentfetched"
 
-$OutputCsv = "$BasePath\$DateStamp.deadletters_entraid_extended.csv"
-$LogFile   = "$BasePath\$DateStamp.deadletters_entraid_extended.log.txt"
+$OutputCsv = "$BasePath\$DateStamp.$QueueName.csv"
+$LogFile   = "$BasePath\$DateStamp.$QueueName.log.txt"
 
 $ReceiveTimeoutSeconds = 3
 $RenewBufferSeconds    = 10
@@ -109,20 +105,30 @@ function Get-ValidServiceBusToken {
     return $CurrentTokenInfo
 }
 
+
 function Get-HeaderValue {
     param(
-        [Parameter(Mandatory = $true)]$Headers,
+        [Parameter(Mandatory = $true)]$Response,
         [Parameter(Mandatory = $true)][string[]]$Names
     )
 
-    foreach ($name in $Names) {
-        foreach ($key in $Headers.Keys) {
-            if ($key -ieq $name) {
-                $value = $Headers[$key]
-                if ($value -is [System.Array]) {
-                    return ($value -join ",")
+    $allHeaders = @()
+
+    if ($Response.Headers) {
+        $allHeaders += $Response.Headers
+    }
+
+    if ($Response.Content -and $Response.Content.Headers) {
+        $allHeaders += $Response.Content.Headers
+    }
+
+    foreach ($header in $allHeaders) {
+        foreach ($wanted in $Names) {
+            if ($header.Key -ieq $wanted) {
+                if ($header.Value -is [System.Collections.IEnumerable]) {
+                    return ($header.Value -join ",")
                 }
-                return [string]$value
+                return [string]$header.Value
             }
         }
     }
@@ -248,7 +254,7 @@ try {
 
         # Rinnovo lock dei messaggi già letti se stanno per scadere
         $now = Get-Date
-        foreach ($lm in @($lockedMessages)) {
+        foreach ($lm in $lockedMessages.ToArray()) {
             if ($null -ne $lm.LockedUntilUtc) {
                 $remaining = $lm.LockedUntilUtc - $now
 
@@ -262,7 +268,7 @@ try {
                             -AccessToken $tokenInfo.AccessToken
 
                         if ([int]$renewResp.StatusCode -eq 200) {
-                            $renewBrokerRaw = Get-HeaderValue -Headers $renewResp.Headers -Names @("BrokerProperties")
+                            $renewBrokerRaw = Get-HeaderValue -Response $renewResp -Names @("BrokerProperties")
                             if ($renewBrokerRaw) {
                                 $renewBroker = $renewBrokerRaw | ConvertFrom-Json
                                 $newLockedUntil = Get-CaseInsensitiveProperty -Object $renewBroker -Names @("LockedUntil", "LockedUntilUtc")
@@ -287,6 +293,22 @@ try {
             -AccessToken $tokenInfo.AccessToken
 
         $status = [int]$resp.StatusCode
+        
+
+        $body = $null
+        try {
+            if ($resp.Content) {
+                $body = [System.Text.Encoding]::UTF8.GetString(
+                    $resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+                )        
+                $body = $body -replace "`r|`n", " "
+            }
+        }
+        catch {
+            Write-Log "Errore lettura body: $($_.Exception.Message)" "WARN"
+        }
+        
+
 
         if ($status -eq 204) {
             Write-Log "Nessun altro messaggio disponibile in DLQ"
@@ -297,8 +319,8 @@ try {
             throw "Errore HTTP durante Peek-Lock. Status=$status Reason=$($resp.ReasonPhrase)"
         }
 
-        $location  = Get-HeaderValue -Headers $resp.Headers -Names @("Location")
-        $brokerRaw = Get-HeaderValue -Headers $resp.Headers -Names @("BrokerProperties")
+        $location  = Get-HeaderValue -Response $resp -Names @("Location")
+        $brokerRaw = Get-HeaderValue -Response $resp -Names @("BrokerProperties")
 
         $broker = $null
         if ($brokerRaw) {
@@ -314,18 +336,18 @@ try {
         $sequenceNumber = Get-CaseInsensitiveProperty -Object $broker -Names @("SequenceNumber")
         $enqueuedTimeUtc = Get-CaseInsensitiveProperty -Object $broker -Names @("EnqueuedTimeUtc")
         if (-not $enqueuedTimeUtc) {
-            $enqueuedTimeUtc = Get-HeaderValue -Headers $resp.Headers -Names @("Date")
+            $enqueuedTimeUtc = Get-HeaderValue -Response $resp -Names @("Date")
         }
 
         $lockedUntil = Get-CaseInsensitiveProperty -Object $broker -Names @("LockedUntil", "LockedUntilUtc")
 
         $deadLetterReason =
             (Get-CaseInsensitiveProperty -Object $broker -Names @("DeadLetterReason")) ??
-            (Get-HeaderValue -Headers $resp.Headers -Names @("DeadLetterReason", "deadletterreason"))
+            (Get-HeaderValue -Response $resp -Names @("DeadLetterReason", "deadletterreason"))
 
         $deadLetterDescription =
             (Get-CaseInsensitiveProperty -Object $broker -Names @("DeadLetterErrorDescription", "DeadLetterDescription")) ??
-            (Get-HeaderValue -Headers $resp.Headers -Names @("DeadLetterErrorDescription", "DeadLetterDescription", "deadlettererrordescription", "deadletterdescription"))
+            (Get-HeaderValue -Response $resp -Names @("DeadLetterErrorDescription", "DeadLetterDescription", "deadlettererrordescription", "deadletterdescription"))
 
         if ([string]::IsNullOrWhiteSpace($messageId) -and $sequenceNumber) {
             $messageId = "SequenceNumber:$sequenceNumber"
@@ -341,6 +363,7 @@ try {
             EnqueuedTimeUtc       = $enqueuedTimeUtc
             DeadLetterReason      = $deadLetterReason
             DeadLetterDescription = $deadLetterDescription
+            MessageBody           = $body
             ReadAtUtc             = (Get-Date).ToUniversalTime().ToString("o")
         }
 

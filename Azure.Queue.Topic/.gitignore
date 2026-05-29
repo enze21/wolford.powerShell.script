@@ -5,6 +5,7 @@ config.json
 
 # Output
 Out/
+Out.Test/
 *.csv
 
 # Log

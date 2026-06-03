@@ -23,6 +23,17 @@ $Namespace     = $config.TEST.Namespace
 #$Secret        = $config.TEST.Secret | ConvertTo-SecureString -AsPlainText -Force
 $BasePath      = $config.TEST.BasePath
 
+
+
+# SQL Server on-prem
+$SqlServer                = $config.TEST.SqlServer
+$SqlDatabase              = if ($config.TEST.SqlDatabase) { $config.TEST.SqlDatabase } else { "WIL.Queue.Topic" }
+$SqlSchema                = if ($config.TEST.SqlSchema) { $config.TEST.SqlSchema } else { "dbo" }
+$SqlUseIntegratedSecurity = if ($null -ne $config.TEST.SqlUseIntegratedSecurity) { [bool]$config.TEST.SqlUseIntegratedSecurity } else { $true }
+$SqlUser                  = $config.TEST.SqlUser
+$SqlPassword              = $config.TEST.SqlPassword
+
+
 $DateStamp = Get-Date -Format "dd.MM.yyyy"
 
 #$EnableCsvExport = $true
@@ -157,6 +168,10 @@ function Get-CaseInsensitiveProperty {
     return $null
 }
 
+# ------------------------------------------------------------
+# Funzioni di utilità SQL
+# ------------------------------------------------------------
+
 function Invoke-ServiceBusRequest {
     param(
         [Parameter(Mandatory = $true)][System.Net.Http.HttpClient]$HttpClient,
@@ -176,6 +191,243 @@ function Invoke-ServiceBusRequest {
     $response = $HttpClient.SendAsync($request).GetAwaiter().GetResult()
     return $response
 }
+
+
+
+function Quote-SqlIdentifier {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    return "[" + $Name.Replace("]", "]]") + "]"
+}
+
+function Get-SqlConnectionString {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [Parameter(Mandatory = $true)][string]$Database,
+        [Parameter(Mandatory = $true)][bool]$UseIntegratedSecurity,
+        [Parameter(Mandatory = $false)][string]$User,
+        [Parameter(Mandatory = $false)][string]$Password
+    )
+
+    if ($UseIntegratedSecurity) {
+        return "Server=$Server;Database=$Database;Integrated Security=True;TrustServerCertificate=True;Encrypt=False;Application Name=DLQExport;"
+    }
+    else {
+        return "Server=$Server;Database=$Database;User ID=$User;Password=$Password;TrustServerCertificate=True;Encrypt=False;Application Name=DLQExport;"
+    }
+}
+
+function Convert-ToNullableDateTime {
+    param(
+        [Parameter(Mandatory = $false)]$Value
+    )
+
+    if ($null -eq $Value -or [string]:: {
+        return [DBNull]::
+    }
+
+    try {
+        return [datetime]$Value
+    }
+    catch {
+        return [DBNull]::
+    }
+}
+
+function Convert-ToNullableInt64 {
+    param(
+        [Parameter(Mandatory = $false)]$Value
+    )
+
+    if ($null -eq $Value -or [string]:: {
+        return [DBNull]::
+    }
+
+    try {
+        return [int64]$Value
+    }
+    catch {
+        return [DBNull]::
+    }
+}
+
+function Ensure-SqlDatabaseAndTable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Server,
+        [Parameter(Mandatory = $true)][string]$DatabaseName,
+        [Parameter(Mandatory = $true)][string]$SchemaName,
+        [Parameter(Mandatory = $true)][string]$TableName,
+        [Parameter(Mandatory = $true)][bool]$UseIntegratedSecurity,
+        [Parameter(Mandatory = $false)][string]$User,
+        [Parameter(Mandatory = $false)][string]$Password
+    )
+
+    Add-Type -AssemblyName System.Data
+
+    # 1. Crea DB se non esiste
+    $masterConnString = Get-SqlConnectionString `
+        -Server $Server `
+        -Database "master" `
+        -UseIntegratedSecurity $UseIntegratedSecurity `
+        -User $User `
+        -Password $Password
+
+    $masterConn = New-Object System.Data.SqlClient.SqlConnection($masterConnString)
+    $masterConn.Open()
+
+    try {
+        $cmd = $masterConn.CreateCommand()
+        $cmd.CommandText = @"
+IF DB_ID(@dbName) IS NULL
+BEGIN
+    DECLARE @sql nvarchar(max);
+    SET @sql = N'CREATE DATABASE ' + QUOTENAME(@dbName);
+    EXEC(@sql);
+END
+"@
+        [void]$cmd.Parameters.Add("@dbName", [System.Data.SqlDbType]::NVarChar, 128)
+        $cmd.Parameters["@dbName"].Value = $DatabaseName
+        [void]$cmd.ExecuteNonQuery()
+    }
+    finally {
+        $masterConn.Close()
+        $masterConn.Dispose()
+    }
+
+    # 2. Crea tabella se non esiste
+    $dbConnString = Get-SqlConnectionString `
+        -Server $Server `
+        -Database $DatabaseName `
+        -UseIntegratedSecurity $UseIntegratedSecurity `
+        -User $User `
+        -Password $Password
+
+    $dbConn = New-Object System.Data.SqlClient.SqlConnection($dbConnString)
+    $dbConn.Open()
+
+    try {
+        $schemaQuoted = Quote-SqlIdentifier -Name $SchemaName
+        $tableQuoted  = Quote-SqlIdentifier -Name $TableName
+        $fullTable    = "$schemaQuoted.$tableQuoted"
+
+        $cmd = $dbConn.CreateCommand()
+        $cmd.CommandText = @"
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.tables t
+    INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE t.name = @tableName
+      AND s.name = @schemaName
+)
+BEGIN
+    CREATE TABLE $fullTable (
+        [Id] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [MessageId] NVARCHAR(255) NOT NULL,
+        [SequenceNumber] BIGINT NULL,
+        [EnqueuedTimeUtc] DATETIME2(7) NULL,
+        [DeadLetterReason] NVARCHAR(1024) NULL,
+        [DeadLetterDescription] NVARCHAR(MAX) NULL,
+        [MessageBody] NVARCHAR(MAX) NULL,
+        [ReadAtUtc] DATETIME2(7) NOT NULL,
+        [InsertedAtUtc] DATETIME2(7) NOT NULL DEFAULT SYSUTCDATETIME()
+    );
+END
+"@
+        [void]$cmd.Parameters.Add("@tableName", [System.Data.SqlDbType]::NVarChar, 128)
+        [void]$cmd.Parameters.Add("@schemaName", [System.Data.SqlDbType]::NVarChar, 128)
+        $cmd.Parameters["@tableName"].Value = $TableName
+        $cmd.Parameters["@schemaName"].Value = $SchemaName
+        [void]$cmd.ExecuteNonQuery()
+    }
+    finally {
+        $dbConn.Close()
+        $dbConn.Dispose()
+    }
+}
+
+function Export-RowsToSql {
+    param(
+        [Parameter(Mandatory = $true)]$Rows,
+        [Parameter(Mandatory = $true)][string]$Server,
+        [Parameter(Mandatory = $true)][string]$DatabaseName,
+        [Parameter(Mandatory = $true)][string]$SchemaName,
+        [Parameter(Mandatory = $true)][string]$TableName,
+        [Parameter(Mandatory = $true)][bool]$UseIntegratedSecurity,
+        [Parameter(Mandatory = $false)][string]$User,
+        [Parameter(Mandatory = $false)][string]$Password
+    )
+
+    Add-Type -AssemblyName System.Data
+
+    $connString = Get-SqlConnectionString `
+        -Server $Server `
+        -Database $DatabaseName `
+        -UseIntegratedSecurity $UseIntegratedSecurity `
+        -User $User `
+        -Password $Password
+
+    $conn = New-Object System.Data.SqlClient.SqlConnection($connString)
+    $conn.Open()
+
+    try {
+        $schemaQuoted = Quote-SqlIdentifier -Name $SchemaName
+        $tableQuoted  = Quote-SqlIdentifier -Name $TableName
+        $fullTable    = "$schemaQuoted.$tableQuoted"
+
+        $insertSql = @"
+INSERT INTO $fullTable (
+    [MessageId],
+    [SequenceNumber],
+    [EnqueuedTimeUtc],
+    [DeadLetterReason],
+    [DeadLetterDescription],
+    [MessageBody],
+    [ReadAtUtc]
+)
+VALUES (
+    @MessageId,
+    @SequenceNumber,
+    @EnqueuedTimeUtc,
+    @DeadLetterReason,
+    @DeadLetterDescription,
+    @MessageBody,
+    @ReadAtUtc
+)
+"@
+
+        foreach ($r in $Rows) {
+            $cmd = $conn.CreateCommand()
+            $cmd.CommandText = $insertSql
+
+            [void]$cmd.Parameters.Add("@MessageId", [System.Data.SqlDbType]::NVarChar, 255)
+            [void]$cmd.Parameters.Add("@SequenceNumber", [System.Data.SqlDbType]::BigInt)
+            [void]$cmd.Parameters.Add("@EnqueuedTimeUtc", [System.Data.SqlDbType]::DateTime2)
+            [void]$cmd.Parameters.Add("@DeadLetterReason", [System.Data.SqlDbType]::NVarChar, 1024)
+            [void]$cmd.Parameters.Add("@DeadLetterDescription", [System.Data.SqlDbType]::NVarChar, -1)
+            [void]$cmd.Parameters.Add("@MessageBody", [System.Data.SqlDbType]::NVarChar, -1)
+            [void]$cmd.Parameters.Add("@ReadAtUtc", [System.Data.SqlDbType]::DateTime2)
+
+            $cmd.Parameters["@MessageId"].Value = if ([string]:: { "UNKNOWN" } else { [string]$r.MessageId }
+            $cmd.Parameters["@SequenceNumber"].Value = Convert-ToNullableInt64 $r.SequenceNumber
+            $cmd.Parameters["@EnqueuedTimeUtc"].Value = Convert-ToNullableDateTime $r.EnqueuedTimeUtc
+            $cmd.Parameters["@DeadLetterReason"].Value = if ([string]:: { [DBNull]:: } else { [string]$r.DeadLetterReason }
+            $cmd.Parameters["@DeadLetterDescription"].Value = if ([string]:: { [DBNull]:: } else { [string]$r.DeadLetterDescription }
+            $cmd.Parameters["@MessageBody"].Value = if ([string]:: { [DBNull]:: } else { [string]$r.MessageBody }
+            $cmd.Parameters["@ReadAtUtc"].Value = Convert-ToNullableDateTime $r.ReadAtUtc
+
+            [void]$cmd.ExecuteNonQuery()
+            $cmd.Dispose()
+        }
+    }
+    finally {
+        $conn.Close()
+        $conn.Dispose()
+    }
+}
+
+
 
 # ------------------------------------------------------------
 # Verifica prerequisiti Az.Accounts
@@ -206,6 +458,14 @@ Write-Log "Namespace: $Namespace"
 Write-Log "Queue    : $QueueName"
 Write-Log "CSV      : $OutputCsv"
 Write-Log "Log      : $LogFile"
+
+
+Write-Log "SQL Server: $SqlServer"
+Write-Log "SQL DB    : $SqlDatabase"
+Write-Log "SQL Schema: $SqlSchema"
+Write-Log "SQL Table : $QueueName"
+
+
 
 # ------------------------------------------------------------
 # Login Azure se necessario
@@ -380,6 +640,39 @@ try {
 
     # Export CSV
     $rows | Export-Csv -Path $OutputCsv -NoTypeInformation -Encoding UTF8
+    Write-Log "Export CSV completato"
+
+    # Ensure DB + table
+    Ensure-SqlDatabaseAndTable `
+        -Server $SqlServer `
+        -DatabaseName $SqlDatabase `
+        -SchemaName $SqlSchema `
+        -TableName $QueueName `
+        -UseIntegratedSecurity $SqlUseIntegratedSecurity `
+        -User $SqlUser `
+        -Password $SqlPassword
+
+    Write-Log "Verifica DB/tabella SQL completata"
+
+    # Export SQL (sempre in INSERT / append)
+    if ($rows.Count -gt 0) {
+        Export-RowsToSql `
+            -Rows $rows `
+            -Server $SqlServer `
+            -DatabaseName $SqlDatabase `
+            -SchemaName $SqlSchema `
+            -TableName $QueueName `
+            -UseIntegratedSecurity $SqlUseIntegratedSecurity `
+            -User $SqlUser `
+            -Password $SqlPassword
+
+        Write-Log "Export SQL completato"
+    }
+    else {
+        Write-Log "Nessuna riga da inserire in SQL"
+    }
+
+Write-Log "Totale messaggi esportati: $($rows.Count)"
 
     Write-Log "Export CSV completato"
     Write-Log "Totale messaggi esportati: $($rows.Count)"

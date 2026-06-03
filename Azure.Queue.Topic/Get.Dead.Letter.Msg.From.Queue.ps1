@@ -224,15 +224,15 @@ function Convert-ToNullableDateTime {
         [Parameter(Mandatory = $false)]$Value
     )
 
-    if ($null -eq $Value -or [string]:: {
-        return [DBNull]::
+    if ($null -eq $Value -or [string]::sNullOrWhiteSpace($Value)) {
+        return [DBNull]::Value
     }
 
     try {
         return [datetime]$Value
     }
     catch {
-        return [DBNull]::
+        return [DBNull]::Value
     }
 }
 
@@ -241,15 +241,15 @@ function Convert-ToNullableInt64 {
         [Parameter(Mandatory = $false)]$Value
     )
 
-    if ($null -eq $Value -or [string]:: {
-        return [DBNull]::
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace($Value)) {
+        return [DBNull]::Value
     }
 
     try {
         return [int64]$Value
     }
     catch {
-        return [DBNull]::
+        return [DBNull]::Value
     }
 }
 

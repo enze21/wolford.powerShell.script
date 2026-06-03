@@ -224,7 +224,7 @@ function Convert-ToNullableDateTime {
         [Parameter(Mandatory = $false)]$Value
     )
 
-    if ($null -eq $Value -or [string]::sNullOrWhiteSpace($Value)) {
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace($Value)) {
         return [DBNull]::Value
     }
 
@@ -409,12 +409,12 @@ VALUES (
             [void]$cmd.Parameters.Add("@MessageBody", [System.Data.SqlDbType]::NVarChar, -1)
             [void]$cmd.Parameters.Add("@ReadAtUtc", [System.Data.SqlDbType]::DateTime2)
 
-            $cmd.Parameters["@MessageId"].Value = if ([string]:: { "UNKNOWN" } else { [string]$r.MessageId }
-            $cmd.Parameters["@SequenceNumber"].Value = Convert-ToNullableInt64 $r.SequenceNumber
-            $cmd.Parameters["@EnqueuedTimeUtc"].Value = Convert-ToNullableDateTime $r.EnqueuedTimeUtc
-            $cmd.Parameters["@DeadLetterReason"].Value = if ([string]:: { [DBNull]:: } else { [string]$r.DeadLetterReason }
-            $cmd.Parameters["@DeadLetterDescription"].Value = if ([string]:: { [DBNull]:: } else { [string]$r.DeadLetterDescription }
-            $cmd.Parameters["@MessageBody"].Value = if ([string]:: { [DBNull]:: } else { [string]$r.MessageBody }
+            $cmd.Parameters["@MessageId"].Value = if ([string]::IsNullOrWhiteSpace($r.MessageId)) { "UNKNOWN" } else { [string]$r.MessageId }
+            $cmd.Parameters["@SequenceNumber"].Value = Convert-ToNullableInt64 $r.SequenceNumber            
+            $cmd.Parameters["@EnqueuedTimeUtc"].Value = Convert-ToNullableDateTime $r.EnqueuedTimeUtc            
+            $cmd.Parameters["@DeadLetterReason"].Value = if ([string]::IsNullOrWhiteSpace($r.DeadLetterReason)) { [DBNull]::Value } else { [string]$r.DeadLetterReason }            
+            $cmd.Parameters["@DeadLetterDescription"].Value = if ([string]::IsNullOrWhiteSpace($r.DeadLetterDescription)) { [DBNull]::Value } else { [string]$r.DeadLetterDescription }            
+            $cmd.Parameters["@MessageBody"].Value = if ([string]::IsNullOrWhiteSpace($r.MessageBody)) { [DBNull]::Value } else { [string]$r.MessageBody }            
             $cmd.Parameters["@ReadAtUtc"].Value = Convert-ToNullableDateTime $r.ReadAtUtc
 
             [void]$cmd.ExecuteNonQuery()

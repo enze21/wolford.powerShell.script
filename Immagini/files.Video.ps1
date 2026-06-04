@@ -26,10 +26,10 @@ function Write-Log {
 # Percorso della directory di rete
 $sourcePath = "\\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES"
 
-Write-Log "Start " "D:\PowerShell\Immagini\log.SS27.second.run.txt" 
+Write-Log "Start " "D:\PowerShell\Immagini\log.txt" 
 
 # Percorso del file Excel
-$excelPath = "D:\PowerShell\Immagini\SS27 second run.xlsx"
+$excelPath = "D:\PowerShell\Immagini\prodotti season 72.20.05.2026.xlsx"
 
 # Avvia Excel e carica il file
 $excel = New-Object -ComObject Excel.Application
@@ -40,7 +40,7 @@ $sheet = $workbook.Sheets.Item(1)
 $subfolderName = $sheet.Name
 
 #$destinationPath = Join-Path -Path $sourcePath -ChildPath $subfolderName
-$destinationPath = "\\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\IT\Various Missing"
+$destinationPath = "\\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\IT\SS27"
 
 # Legge fino a 1000 righe da colonne B e C
 $identificatori = @()
@@ -60,12 +60,12 @@ for ($row = 2; $row -le 1001; $row++) {
     
     if (($valore5 -eq 'Y') -and $valore2 -and $valore3) {
         $identificatori = "${valore2}_${valore3}_*"
-        Write-Log "Added $valore2 $valore3" "D:\PowerShell\Immagini\log.SS27.second.run.txt" 
+        Write-Log "Added $valore2 $valore3" "D:\PowerShell\Immagini\log.txt" 
     
             # Crea la sottocartella se non esiste
         if (-not (Test-Path -Path $destinationPath)) {
             New-Item -ItemType Directory -Path $destinationPath | Out-Null
-            Write-Log "Created Folder " "D:\PowerShell\Immagini\log.SS27.second.run.txt" 
+            Write-Log "Created Folder " "D:\PowerShell\Immagini\log.txt" 
 
          }
 
@@ -86,11 +86,11 @@ for ($row = 2; $row -le 1001; $row++) {
         # Verifica se sono stati trovati file
         if ($fileArray.Count -eq 0) {
             Write-Host "Nessun file trovato con il pattern specificato."
-            Write-Log "Nessun file trovato con il pattern specificato." "D:\PowerShell\Immagini\log.SS27.second.run.txt" 
+            Write-Log "Nessun file trovato con il pattern specificato." "D:\PowerShell\Immagini\log.txt" 
         } else {
             # Stampa i file trovati
             Write-Host "File trovati:"
-            Write-Log "File trovati:" "D:\PowerShell\Immagini\log.SS27.second.run.txt" 
+            Write-Log "File trovati:" "D:\PowerShell\Immagini\log.txt" 
             $fileArray | ForEach-Object { Write-Host $_.FullName }
         }
         
@@ -98,7 +98,7 @@ for ($row = 2; $row -le 1001; $row++) {
         foreach ($file in $fileArray) {
             Copy-Item -Path $file.FullName -Destination $destinationPath -Force
             $fileTemp = $file.FullName
-            Write-Log "Copiato :  $fileTemp " "D:\PowerShell\Immagini\log.SS27.second.run.txt" 
+            Write-Log "Copiato :  $fileTemp " "D:\PowerShell\Immagini\log.txt" 
 
         }
 
@@ -121,5 +121,5 @@ $excel.Quit()
 
 
 
-Write-Log "Finish " "D:\PowerShell\Immagini\log.SS27.second.run.txt" 
+Write-Log "Finish " "D:\PowerShell\Immagini\log.txt" 
 

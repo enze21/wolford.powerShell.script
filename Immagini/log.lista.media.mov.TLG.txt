@@ -1,0 +1,11 @@
+2026-06-04 14:52:54 [INFO] Start 
+2026-06-04 14:52:55 [INFO] Added 16008 7005
+2026-06-04 14:53:32 [INFO] File trovati:
+2026-06-04 14:53:32 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\IT\SS27\16008_7005_100.mov 
+2026-06-04 14:53:32 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\SS_24 + reshoot\videos\16008_7005_100.mov 
+2026-06-04 14:53:32 [INFO] Added 16008 7005
+2026-06-04 14:54:11 [INFO] File trovati:
+2026-06-04 14:54:11 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\IT\SS27\16008_7005_100.mov 
+2026-06-04 14:54:11 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\IT\Videos TLG\16008_7005_100.mov 
+2026-06-04 14:54:12 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\SS_24 + reshoot\videos\16008_7005_100.mov 
+2026-06-04 14:54:12 [INFO] Added 16021 7005

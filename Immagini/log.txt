@@ -20901,3 +20901,29 @@
 2026-05-20 20:31:21 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\SS_24 + reshoot\5_DROP\2304x3072px - 72dpi\O\18535_7005_100_005_B_X_B2B.jpg 
 2026-05-20 20:31:21 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\SS_24 + reshoot\5_DROP\2304x3072px - 72dpi\S\18535_7005_100_004_B_X_B2B.jpg 
 2026-05-20 20:31:25 [INFO] Finish 
+2026-06-04 14:37:43 [INFO] Added 10277 4365
+2026-06-04 14:38:22 [INFO] File trovati:
+2026-06-04 14:38:27 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\AW_2021\02_Etailer\Missing_Images\10277_4365_1.jpg 
+2026-06-04 14:38:30 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\AW_2223\01_Onlineshop\01_Wolford&TheW\2 packs 3 packs\10277_4365_1.jpg 
+2026-06-04 14:38:31 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\IT\SS27\10277_4365_1.jpg 
+2026-06-04 14:38:31 [INFO] Added 10687 4023
+2026-06-04 14:39:00 [INFO] File trovati:
+2026-06-04 14:39:00 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\AW_2021\01_Onlineshop\All_Available_Essentials\10687_4023_300_004_B_X_B2B.JPG 
+2026-06-04 14:39:00 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\IT\SS27\10687_4023_001_001_F_X.JPG 
+2026-06-04 14:39:00 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\IT\SS27\10687_4023_300_004_B_X_B2B.JPG 
+2026-06-04 14:39:00 [INFO] Copiato :  \\SWOL002D\GBilder\eCommerce\eCommerce\DATABASE IMAGES\Red Label\SS_20\COLOUR SWATCHES\10687_4023_001_001_F_X.JPG 
+2026-06-04 14:39:00 [INFO] Added 11310 4870
+2026-06-04 14:39:30 [INFO] Nessun file trovato con il pattern specificato.
+2026-06-04 14:39:31 [INFO] Added 11310 4870
+2026-06-04 14:40:01 [INFO] Nessun file trovato con il pattern specificato.
+2026-06-04 14:40:01 [INFO] Added 11310 4870
+2026-06-04 14:40:33 [INFO] Nessun file trovato con il pattern specificato.
+2026-06-04 14:40:33 [INFO] Added 11310 4870
+2026-06-04 14:40:58 [INFO] Start 
+2026-06-04 14:40:58 [INFO] Added 16008 7005
+2026-06-04 14:41:04 [INFO] Nessun file trovato con il pattern specificato.
+2026-06-04 14:41:04 [INFO] Added 11310 4870
+2026-06-04 14:41:28 [INFO] Nessun file trovato con il pattern specificato.
+2026-06-04 14:41:28 [INFO] Added 16008 7005
+2026-06-04 14:41:40 [INFO] Nessun file trovato con il pattern specificato.
+2026-06-04 14:41:41 [INFO] Added 11310 4870

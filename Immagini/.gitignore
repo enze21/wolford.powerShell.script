@@ -1,0 +1,19 @@
+# Config e segreti
+config.json
+*.json
+*.env
+
+# Output
+Out/
+Out.Test/
+*.csv
+
+# Log
+*.log
+
+# VS Code
+.vscode/
+Backup/
+Vari/
+config.json
+config.json

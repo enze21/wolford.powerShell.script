@@ -726,4 +726,4 @@ finally {
     }
 
     Write-Log "Fine script"
-}cd
+}

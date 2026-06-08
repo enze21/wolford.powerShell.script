@@ -4,12 +4,6 @@ Script unico che:
 - controlla Queue e Topic/Subscription per un elenco di entity names
 - se la DLQ contiene messaggi, esegue l'export dei messaggi
 - esporta su CSV e opzionalmente su SQL Server on-prem
-
-NOTE:
-- Mantiene la logica dei tre script originali in un unico file.
-- Per i Topic controlla tutte le subscription esistenti del topic.
-- Per le Queue controlla la queue con lo stesso nome dell'entity.
-- Legge i messaggi dalla DLQ in PeekLock e li sblocca a fine elaborazione.
 #>
 
 Set-StrictMode -Version Latest
@@ -26,6 +20,7 @@ if (!(Test-Path $configPath)) {
 
 $config = Get-Content $configPath -Raw | ConvertFrom-Json
 
+<# TEST
 $TenantId       = $config.TEST.TenantId
 $SubscriptionId = $config.TEST.SubscriptionId
 $ResourceGroup  = $config.TEST.ResourceGroup
@@ -38,6 +33,22 @@ $SqlSchema                = if ($config.TEST.SqlSchema) { $config.TEST.SqlSchema
 $SqlUseIntegratedSecurity = if ($null -ne $config.TEST.SqlUseIntegratedSecurity) { [bool]$config.TEST.SqlUseIntegratedSecurity } else { $true }
 $SqlUser                  = $config.TEST.SqlUser
 $SqlPassword              = $config.TEST.SqlPassword
+#>
+
+<# PRD #>
+$TenantId       = $config.PRD.TenantId
+$SubscriptionId = $config.PRD.SubscriptionId
+$ResourceGroup  = $config.PRD.ResourceGroup
+$Namespace      = $config.PRD.Namespace
+$BasePath       = $config.PRD.BasePath
+
+$SqlServer                = $config.PRD.SqlServer
+$SqlDatabase              = if ($config.PRD.SqlDatabase) { $config.PRD.SqlDatabase } else { 'WIL.Queue.Topic' }
+$SqlSchema                = if ($config.PRD.SqlSchema) { $config.PRD.SqlSchema } else { 'dbo' }
+$SqlUseIntegratedSecurity = if ($null -ne $config.PRD.SqlUseIntegratedSecurity) { [bool]$config.PRD.SqlUseIntegratedSecurity } else { $true }
+$SqlUser                  = $config.PRD.SqlUser
+$SqlPassword              = $config.PRD.SqlPassword
+
 
 $DateStamp = Get-Date -Format 'dd.MM.yyyy'
 $OutputCsv = Join-Path $BasePath ("{0}.ServiceBus_DLQ_Report.csv" -f $DateStamp)
@@ -48,12 +59,12 @@ $EnableCsvExport       = $true
 $EnableSqlExport       = $true
 
 $TargetEntities = @(
-    'InventoryAdjustmentCreated',
-    'InventoryReceivedCreated',
-    'D2SInventoryTransferCreated',
-    'S2SInventoryTransferCreated',
-    'ReturnOrderCreated',
-    'SalesOrderCreated'
+    'inventoryadjustmentcreated',
+    'Inventoryreceivedcreated',
+    'd2sinventorytransfercreated',
+    's2sinventorytransfercreated',
+    'returnordercreated',
+    'salesordercreated'
 )
 
 # ============================================================
@@ -168,9 +179,12 @@ function Invoke-ServiceBusRequest {
     $request.Headers.TryAddWithoutValidation('Authorization', "Bearer $AccessToken") | Out-Null
     $request.Headers.TryAddWithoutValidation('Accept', 'application/atom+xml,application/json,text/plain,*/*') | Out-Null
 
-    if ($PSBoundParameters.ContainsKey('Body')) {
-        $request.Content = [System.Net.Http.StringContent]::new($Body, [System.Text.Encoding]::UTF8, $ContentType)
+
+    if ($PSBoundParameters.ContainsKey('Body') -and $Body) {
+        $request.Content = [System.Net.Http.StringContent]::new($Body, [System.Text.Encoding]::UTF8)
+        $request.Content.Headers.ContentType = 'application/atom+xml'
     }
+    
 
     return $HttpClient.SendAsync($request).GetAwaiter().GetResult()
 }
@@ -249,16 +263,18 @@ function Ensure-SqlDatabaseAndTable {
     try {
         $masterConn.Open()
         $cmd = $masterConn.CreateCommand()
-        $cmd.CommandText = @"
-IF DB_ID(@dbName) IS NULL
+$dbSafe = $DatabaseName -replace ']', ']]'
+
+$cmd.CommandText = @"
+IF DB_ID('$dbSafe') IS NULL
 BEGIN
-    DECLARE @sql nvarchar(max);
-    SET @sql = N'CREATE DATABASE ' + QUOTENAME(@dbName);
-    EXEC(@sql);
+    EXEC('CREATE DATABASE [$dbSafe]')
 END
 "@
-        [void]$cmd.Parameters.Add('@dbName', [System.Data.SqlDbType]::NVarChar, 128)
-        $cmd.Parameters['@dbName'].Value = $DatabaseName
+
+
+        #[void]$cmd.Parameters.Add('@dbName', [System.Data.SqlDbType]::NVarChar, 128)
+        #$cmd.Parameters['@dbName'].Value = $DatabaseName
         [void]$cmd.ExecuteNonQuery()
     }
     finally {
@@ -458,16 +474,24 @@ VALUES (
 function Get-QueueDlqCount {
     param([Parameter(Mandatory = $true)][string]$QueueName)
 
-    $queue = Get-AzServiceBusQueue -ResourceGroupName $ResourceGroup -NamespaceName $Namespace -Name $QueueName -ErrorAction SilentlyContinue
+    $queue = Get-AzServiceBusQueue `
+        -ResourceGroupName $ResourceGroup `
+        -NamespaceName $Namespace `
+        -Name $QueueName `
+        -ErrorAction SilentlyContinue
+
     if (-not $queue) { return $null }
 
+    $count = $null
+
+    # proprietà esposta spesso da Az.ServiceBus
     $count = Get-CaseInsensitiveProperty -Object $queue -Names @(
-        'DeadLetterMessageCount',
-        'CountDetails.DeadLetterMessageCount'
+        'CountDetailDeadLetterMessageCount',
+        'DeadLetterMessageCount'
     )
 
+    # fallback su CountDetails
     if ($null -eq $count) {
-        # fallback esplicito
         $countDetails = Get-CaseInsensitiveProperty -Object $queue -Names @('CountDetails')
         if ($countDetails) {
             $count = Get-CaseInsensitiveProperty -Object $countDetails -Names @('DeadLetterMessageCount')
@@ -475,26 +499,45 @@ function Get-QueueDlqCount {
     }
 
     return [pscustomobject]@{
-        Exists                  = $true
-        Queue                   = $queue
-        DeadLetterMessageCount  = [int64]($count | ForEach-Object { if ($_ -eq $null) { 0 } else { $_ } })
+        Exists                 = $true
+        Queue                  = $queue
+        DeadLetterMessageCount = [int64]$(if ($null -eq $count) { 0 } else { $count })
     }
 }
+
 
 function Get-TopicSubscriptionsDlqCount {
     param([Parameter(Mandatory = $true)][string]$TopicName)
 
-    $topic = Get-AzServiceBusTopic -ResourceGroupName $ResourceGroup -NamespaceName $Namespace -Name $TopicName -ErrorAction SilentlyContinue
+    $topic = Get-AzServiceBusTopic `
+        -ResourceGroupName $ResourceGroup `
+        -NamespaceName $Namespace `
+        -Name $TopicName `
+        -ErrorAction SilentlyContinue
+
     if (-not $topic) { return @() }
 
-    $subs = Get-AzServiceBusSubscription -ResourceGroupName $ResourceGroup -NamespaceName $Namespace -TopicName $TopicName -ErrorAction SilentlyContinue
+    $subs = Get-AzServiceBusSubscription `
+        -ResourceGroupName $ResourceGroup `
+        -NamespaceName $Namespace `
+        -TopicName $TopicName `
+        -ErrorAction SilentlyContinue
+
     $result = @()
 
     foreach ($sub in @($subs)) {
+
+        Write-Log ("DEBUG Subscription properties for {0}: {1}" -f $sub.Name, (($sub.PSObject.Properties.Name | Sort-Object) -join ', '))
+
+        $count = $null
+
+        # proprietà mostrata nell'output Microsoft Learn
         $count = Get-CaseInsensitiveProperty -Object $sub -Names @(
-            'DeadLetterMessageCount',
-            'CountDetails.DeadLetterMessageCount'
+            'CountDetailDeadLetterMessageCount',
+            'DeadLetterMessageCount'
         )
+
+        # fallback su CountDetails.DeadLetterMessageCount
         if ($null -eq $count) {
             $countDetails = Get-CaseInsensitiveProperty -Object $sub -Names @('CountDetails')
             if ($countDetails) {
@@ -505,7 +548,7 @@ function Get-TopicSubscriptionsDlqCount {
         $result += [pscustomobject]@{
             TopicName              = $TopicName
             SubscriptionName       = (Get-CaseInsensitiveProperty -Object $sub -Names @('Name'))
-            DeadLetterMessageCount = [int64]($count | ForEach-Object { if ($_ -eq $null) { 0 } else { $_ } })
+            DeadLetterMessageCount = [int64]$(if ($null -eq $count) { 0 } else { $count })
             Subscription           = $sub
         }
     }
@@ -547,7 +590,7 @@ function Read-DlqMessages {
 
             if (-not $response.IsSuccessStatusCode) {
                 $respBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-                throw "Errore lettura DLQ $EntityLabel: HTTP $([int]$response.StatusCode) - $respBody"
+                throw "Errore lettura DLQ ${EntityLabel}: HTTP $([int]$response.StatusCode) - $respBody"
             }
 
             $messageBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -597,7 +640,7 @@ function Read-DlqMessages {
                 try {
                     $tokenInfo = Get-ValidServiceBusToken -CurrentTokenInfo $tokenInfo
                     # Rilascia il lock senza completare il messaggio
-                    $unlockResponse = Invoke-ServiceBusRequest -HttpClient $HttpClient -Method 'PUT' -Uri $locked.Location -AccessToken $tokenInfo.AccessToken -Body ''
+                    $unlockResponse = Invoke-ServiceBusRequest -HttpClient $HttpClient -Method 'PUT' -Uri $locked.Location -AccessToken $tokenInfo.AccessToken
                     if (-not $unlockResponse.IsSuccessStatusCode) {
                         Write-Log ("Unlock non riuscito per {0}: HTTP {1}" -f $EntityLabel, [int]$unlockResponse.StatusCode) 'WARN' $EntityLogFile
                     }
@@ -667,7 +710,7 @@ function Export-TopicSubscriptionDlq {
 
     Write-Log "Avvio export DLQ Topic/Subscription: $TopicName / $SubscriptionName (messaggi DLQ: $DeadLetterMessageCount)" 'INFO' $entityLog
 
-    $rows = Read-DlqMessages -EntityPath "$TopicName/Subscriptions/$SubscriptionName" -HttpClient $HttpClient -StaticFields @{ TopicName = $TopicName; SubscriptionName = $SubscriptionName } -EntityLabel "$TopicName/$SubscriptionName" -EntityLogFile $entityLog
+    $rows = @(Read-DlqMessages -EntityPath "$TopicName/Subscriptions/$SubscriptionName" -HttpClient $HttpClient -StaticFields @{ TopicName = $TopicName; SubscriptionName = $SubscriptionName } -EntityLabel "$TopicName/$SubscriptionName" -EntityLogFile $entityLog)
 
     if ($EnableCsvExport -and $rows.Count -gt 0) {
         $rows | Export-Csv -Path $entityCsv -NoTypeInformation -Delimiter ';' -Encoding UTF8
@@ -735,9 +778,13 @@ Write-Log ("Target entities : {0}" -f ($TargetEntities -join ', '))
 
 Ensure-AzureLogin
 
+
 $Results = New-Object System.Collections.Generic.List[object]
 $http = [System.Net.Http.HttpClient]::new()
 $http.Timeout = [TimeSpan]::FromMinutes(10)
+
+(Get-AzContext).Account.Id
+
 
 try {
     foreach ($entity in $TargetEntities) {
@@ -764,6 +811,7 @@ try {
         }
         else {
             foreach ($subInfo in $topicSubs) {
+                Write-Log ("DEBUG Topic={0} Subscription={1} DLQ={2}" -f $subInfo.TopicName, $subInfo.SubscriptionName, $subInfo.DeadLetterMessageCount)
                 Write-Log "Topic/Subscription trovata: $($subInfo.TopicName) / $($subInfo.SubscriptionName) - DeadLetterMessageCount = $($subInfo.DeadLetterMessageCount)"
                 if ($subInfo.DeadLetterMessageCount -gt 0) {
                     $exportResult = Export-TopicSubscriptionDlq -TopicName $subInfo.TopicName -SubscriptionName $subInfo.SubscriptionName -DeadLetterMessageCount $subInfo.DeadLetterMessageCount -HttpClient $http
